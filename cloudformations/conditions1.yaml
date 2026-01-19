@@ -26,6 +26,7 @@ Conditions:
   IsLab: !Or [ !Equals [ dev, !Ref Environment ], !Equals [ qa, !Ref Environment ], !Equals [ beta, !Ref Environment ] ]
   IsLab2: !Not [ !Equals [ prod, !Ref Environment ] ]
   IsLab3: !Not [ !Conditions IsProd ]
+
 Resources:
   DemoBucket:
     Type: 'AWS::S3::Bucket'
@@ -34,4 +35,5 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
         - Key: NumberOfInstances
+          Value: !Ref NumberOfInstances
           Value: !Ref NumberOfInstances

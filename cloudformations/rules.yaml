@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+
+  Environment:
+    Description: Defines environment type
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - beta
+      - prod
+    ConstraintDescription: Use valid environment [dev, qa, beta, prod]
+
+  NumberOfInstances:
+    Description: Number of instances to launch
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 5
+    ConstraintDescription: Must be between 1 and 5
+
+Rules:
+  ProdEnvironmentRule:
+    RuleCondition: !Or
+      - !Equals [ !Ref Environment, prod ]
+      - !Equals [ !Ref Environment, dev ]
+    Assertions:
+      - Assert: !Equals [ !Ref NumberOfInstances, "5" ]
+        AssertDescription: Environment must have 5 instances
+
+Resources:
+  DemoBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: NumberOfInstances
+          Value: !Ref NumberOfInstances

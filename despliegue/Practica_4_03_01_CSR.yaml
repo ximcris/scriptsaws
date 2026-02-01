@@ -1,0 +1,227 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: VPC con subredes publicas y privadas, NAT Gateway, Internet Gateway y VPC Peering
+
+# PARAMETERS
+Parameters:
+  EnvironmentType:
+    Type: String
+    Default: Dev
+    AllowedValues:
+      - Dev
+      - Prod
+    Description: Ambiente de despliegue
+
+  PeerVPCId:
+    Type: AWS::EC2::VPC::Id
+    Description: ID de la VPC destino para VPC Peering
+
+# MAPPINGS
+Mappings:
+  EnvironmentCIDRMap:
+    Dev:
+      VPC: 20.0.0.0/16
+      PublicSubnet1: 20.0.1.0/24
+      PublicSubnet2: 20.0.2.0/24
+      PrivateSubnet1: 20.0.10.0/24
+      PrivateSubnet2: 20.0.11.0/24
+    Prod:
+      VPC: 20.0.0.0/16
+      PublicSubnet1: 20.0.1.0/24
+      PublicSubnet2: 20.0.2.0/24
+      PrivateSubnet1: 20.0.20.0/24
+      PrivateSubnet2: 20.0.21.0/24
+
+# RESOURCES
+Resources:
+
+  # VPC
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !FindInMap [EnvironmentCIDRMap, !Ref EnvironmentType, VPC]
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-VPC'
+        - Key: Environment
+          Value: !Ref EnvironmentType
+        - Key: CIDR
+          Value: !FindInMap [EnvironmentCIDRMap, !Ref EnvironmentType, VPC]
+
+  # INTERNET GATEWAY
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-IGW'
+        - Key: Environment
+          Value: !Ref EnvironmentType
+
+  AttachIGW:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MyVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # PUBLIC SUBNETS
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: !FindInMap [EnvironmentCIDRMap, !Ref EnvironmentType, PublicSubnet1]
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Public-Subnet-1'
+        - Key: Type
+          Value: Public
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: !FindInMap [EnvironmentCIDRMap, !Ref EnvironmentType, PublicSubnet2]
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Public-Subnet-2'
+        - Key: Type
+          Value: Public
+
+  # PUBLIC ROUTE TABLE
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachIGW
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # NAT GATEWAY
+  NatEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+
+  # PRIVATE SUBNETS
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: !FindInMap [EnvironmentCIDRMap, !Ref EnvironmentType, PrivateSubnet1]
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Private-Subnet-1'
+        - Key: Type
+          Value: Private
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: !FindInMap [EnvironmentCIDRMap, !Ref EnvironmentType, PrivateSubnet2]
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Private-Subnet-2'
+        - Key: Type
+          Value: Private
+
+  # PRIVATE ROUTE TABLES
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+
+  PrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+
+  PrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet2RTAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable2
+
+  # VPC PEERING
+  VPCPeeringConnection:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties:
+      VpcId: !Ref MyVPC
+      PeerVpcId: !Ref PeerVPCId
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Peering'
+        - Key: Environment
+          Value: !Ref EnvironmentType
+
+# OUTPUTS
+Outputs:
+  VPCId:
+    Description: ID de la VPC
+    Value: !Ref MyVPC
+
+  PublicSubnets:
+    Description: Subredes publicas
+    Value: !Join [',', [!Ref PublicSubnet1, !Ref PublicSubnet2]]
+
+  PrivateSubnets:
+    Description: Subredes privadas
+    Value: !Join [',', [!Ref PrivateSubnet1, !Ref PrivateSubnet2]]
+
+  NatGatewayId:
+    Description: ID del NAT Gateway
+    Value: !Ref NatGateway
+
+  VPCPeeringId:
+    Description: ID de la conexion de VPC Peering
+    Value: !Ref VPCPeeringConnection
